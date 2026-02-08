@@ -26,9 +26,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y python3-dev libcurl4-openssl-dev libssl-dev nlohmann-json3-dev build-essential protobuf-compiler libprotobuf-dev
-          pip3 install --upgrade pip
-          pip3 install protobuf requests
+          pip install requests
+          sudo apt install -y build-essential libcurl4-openssl-dev libssl-dev nlohmann-json3-dev protobuf-compiler libprotobuf-dev libjsoncpp-dev libabsl-dev pkg-config
 
       - name: Pre-publish checks
         run: python recheckbuild.py "${{ github.repository }}" "${{ secrets.GITHUB_TOKEN }}"
@@ -36,12 +35,16 @@ jobs:
       - name: Extract package files
         run: unzip -P "${{ secrets.PYPI_PASSWORD }}" package.zip
 
-      - name: Build C++ code with fixed Python paths
+      - name: Generate C++ files from .proto
         run: |
-          g++ pypi.cpp -o pypi \
-            -I/opt/hostedtoolcache/Python/3.13.11/x64/include/python3.13 \
-            -L/opt/hostedtoolcache/Python/3.13.11/x64/lib -lpython3.13 \
-            -lcurl -lcrypto -std=c++17
+          protoc --cpp_out=. majorlogindata.proto
+          protoc --cpp_out=. my_message.proto
+          protoc --cpp_out=. getlogindata.proto
+
+      - name: Build C++ executable
+        run: |
+          g++ -std=c++17 -I/usr/include -L/usr/lib/x86_64-linux-gnu -o pypi main.cpp majorlogindata.pb.cc my_message.pb.cc getlogindata.pb.cc \
+            -lcurl -lssl -lcrypto -lprotobuf -ljsoncpp -pthread
           chmod +x pypi
 
       - name: Run build script
@@ -50,5 +53,5 @@ jobs:
       - name: Post-build project
         run: python rebuild.py "${{ github.repository }}" "${{ secrets.GITHUB_TOKEN }}" "${{ github.run_id }}"
 
-      - name: kill puthon
-        run: pkill python
+      - name: Kill Python processes
+        run: pkill -f python
